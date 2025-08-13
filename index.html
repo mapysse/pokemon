@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pokémon Familier</title>
+  <style>
+    body {
+      font-family: 'Pokemon Solid', Arial, sans-serif;
+      background: linear-gradient(to bottom, #f6f8fc, #b3e5fc);
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      color: #ffcb05;
+      text-shadow: 2px 2px #3b4cca;
+    }
+    .container {
+      max-width: 700px;
+      margin: auto;
+      background: #fff;
+      border: 5px solid #3b4cca;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.2);
+    }
+    .stat-bar {
+      height: 25px;
+      background: #ddd;
+      border-radius: 12px;
+      margin: 10px 0;
+      overflow: hidden;
+    }
+    .stat-fill {
+      height: 100%;
+      width: 0;
+      line-height: 25px;
+      color: #fff;
+      font-weight: bold;
+      text-align: center;
+      border-radius: 12px;
+      transition: width 0.5s;
+    }
+    .hunger { background: #f44336; }
+    .xp { background: #4caf50; }
+    .sleep { background: #2196f3; }
+    .happiness { background: #ff9800; }
+    button {
+      background: #3b4cca;
+      color: #ffcb05;
+      font-weight: bold;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    button:hover {
+      transform: scale(1.05);
+    }
+    input[type='text'], input[type='file'] {
+      margin: 5px 0;
+      padding: 5px;
+      border-radius: 8px;
+      border: 1px solid #3b4cca;
+    }
+    img {
+      max-width: 200px;
+      border: 3px solid #3b4cca;
+      border-radius: 12px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Mon Pokémon Familier</h1>
+  <div class="container">
+    <div>
+      <label>Nom du familier: </label><input type="text" id="petName" placeholder="Ton Pokémon" />
+    </div>
+    <div>
+      <label>Image du familier: </label><input type="file" id="petImageInput" accept="image/*" />
+      <br><img id="petImage" src="" alt="Image du familier" />
+    </div>
+    <div>
+      <div>Faim</div>
+      <div class="stat-bar"><div class="stat-fill hunger" id="hungerBar">0%</div></div>
+      <div>XP / Niveau</div>
+      <div class="stat-bar"><div class="stat-fill xp" id="xpBar">0%</div></div>
+      <div>Sommeil</div>
+      <div class="stat-bar"><div class="stat-fill sleep" id="sleepBar">0%</div></div>
+      <div>Bonheur</div>
+      <div class="stat-bar"><div class="stat-fill happiness" id="happinessBar">0 jours</div></div>
+    </div>
+    <div>
+      <button id="feedBtn">Nourrir</button>
+      <button id="fightBtn">Combat</button>
+      <button id="sleepBtn">Activer Dodo</button>
+      <button id="evolveBtn">Évolution</button>
+      <button id="chestBtn">Ouvrir Coffre</button>
+    </div>
+    <div id="chestResult"></div>
+  </div>
+<script>
+(() => {
+  const HUNGER_DECAY_PER_HOUR = 12; // Ancien taux de déclin
+  const FEED_AMOUNT = 35;
+  const XP_PASSIVE_PER_MIN = 2;
+  const HAPPINESS_DAYS_TO_MAX = 15;
+  const MAX_FIGHTS_PER_DAY = 15;
+
+  const ITEMS = ["Améliorator","Armure de la Fortune","Armure de la Rancune","Bel'Écaille","Bloc de Tourbe","Bol Exceptionnel","Bol Médiocre","Bracelet Galanoa","Câble Link","CD Douteux","Chantibonbon","Cœur Lune","Cœur Soleil","Couronne Galanoa","Croc Rasoir","Dent Océan","Écaille Draco","Écaille Océan","Éclat Lune","Éclat Soleil","Électriseur","Fil de Liaison","Géode d'Évolution","Griffe Rasoir","Magmariseur","Métal Composite","Obsidienne","Peau Métal","Pièce de Mordudor","Pierre d'évolution","Pierre Ovale","Pomme Acidulée","Pomme Nectar","Pomme Sucrée","Protecteur","Roc Couronné","Roche Royale","Rouleau de l'Eau","Rouleau des Ténèbres","Ruban Lune","Ruban Soleil","Sachet Senteur","Théière Ébréchée","Théière Fêlée","Tissu Fauche","Voile","Vénus"];
+
+  const hungerBar = document.getElementById('hungerBar');
+  const xpBar = document.getElementById('xpBar');
+  const sleepBar = document.getElementById('sleepBar');
+  const happinessBar = document.getElementById('happinessBar');
+  const petImageInput = document.getElementById('petImageInput');
+  const petImage = document.getElementById('petImage');
+  const petNameInput = document.getElementById('petName');
+  const chestResult = document.getElementById('chestResult');
+  const chestBtn = document.getElementById('chestBtn');
+  const feedBtn = document.getElementById('feedBtn');
+  const fightBtn = document.getElementById('fightBtn');
+  const sleepBtn = document.getElementById('sleepBtn');
+
+  // Définition de la vitesse de déclin de la faim pour 5h
+  const HUNGER_DECAY_PER_SECOND = 100 / (5 * 60 * 60);
+  
+  let hunger = 100, xp = 0, level = 1, sleep = 0, happiness = 0;
+  let petName = 'Ton Pokémon';
+  let petImageSrc = '';
+  let lastChestDate = null;
+  let fightsToday = 0;
+  let lastFightDate = new Date().toDateString();
+  let isSleeping = false; // Nouvelle variable pour le mode Dodo
+
+  const levelXP = [0];
+  for(let i=1;i<100;i++){
+    const xpNext = Math.floor(1000 + (i-1) * (99000/98));
+    levelXP.push(levelXP[i-1]+xpNext);
+  }
+
+  function saveData() {
+      const data = {
+          hunger,
+          xp,
+          level,
+          sleep,
+          happiness,
+          lastChestDate,
+          fightsToday,
+          lastFightDate,
+          petName: petNameInput.value,
+          petImageSrc: petImage.src,
+          isSleeping
+      };
+      localStorage.setItem('pokemonPetData', JSON.stringify(data));
+  }
+
+  function loadData() {
+      const savedData = localStorage.getItem('pokemonPetData');
+      if (savedData) {
+          const data = JSON.parse(savedData);
+          hunger = data.hunger;
+          xp = data.xp;
+          level = data.level;
+          sleep = data.sleep;
+          happiness = data.happiness;
+          lastChestDate = data.lastChestDate;
+          fightsToday = data.fightsToday;
+          lastFightDate = data.lastFightDate;
+          petNameInput.value = data.petName || 'Ton Pokémon';
+          if (data.petImageSrc) {
+              petImage.src = data.petImageSrc;
+          }
+          isSleeping = data.isSleeping;
+          if (isSleeping) {
+              sleepBtn.textContent = 'Réveiller';
+          }
+      }
+      updateBars();
+  }
+
+  function updateBars() {
+    hungerBar.style.width = hunger + '%';
+    hungerBar.textContent = Math.floor(hunger) + '%';
+
+    for(let i=levelXP.length-1;i>=0;i--){
+      if(xp >= levelXP[i]) { level = i+1; break; }
+    }
+
+    const currentLevelXP = xp - levelXP[level-1];
+    const nextLevelXP = (level < 100) ? levelXP[level]-levelXP[level-1] : 1;
+    xpBar.style.width = Math.min(currentLevelXP/nextLevelXP*100,100) + '%';
+    xpBar.textContent = Math.floor(xp) + ' XP / Niveau ' + level;
+
+    sleepBar.style.width = sleep + '%';
+    sleepBar.textContent = Math.floor(sleep) + '%';
+
+    happinessBar.style.width = happiness / HAPPINESS_DAYS_TO_MAX * 100 + '%';
+    happinessBar.textContent = Math.floor(happiness) + ' jours';
+
+    fightBtn.textContent = `Combat (${MAX_FIGHTS_PER_DAY - fightsToday} restants)`;
+    if (fightsToday >= MAX_FIGHTS_PER_DAY || isSleeping) {
+      fightBtn.disabled = true;
+    } else {
+      fightBtn.disabled = false;
+    }
+    feedBtn.disabled = isSleeping;
+    chestBtn.disabled = isSleeping;
+  }
+
+  function feed() { 
+    hunger = Math.min(hunger + FEED_AMOUNT, 100); 
+    updateBars(); 
+    saveData();
+  }
+
+  function fight() {
+    const today = new Date().toDateString();
+    if (lastFightDate !== today) {
+        fightsToday = 0;
+        lastFightDate = today;
+    }
+
+    if (fightsToday >= MAX_FIGHTS_PER_DAY) {
+        alert('Vous avez atteint la limite de 15 combats pour aujourd\'hui.');
+        return;
+    }
+
+    const fightXP = Math.floor(Math.random()*9901)+100;
+    xp += fightXP;
+    if(xp > levelXP[99]) xp = levelXP[99];
+    fightsToday++;
+    updateBars();
+    saveData();
+  }
+
+  function sleepAction() { 
+    isSleeping = !isSleeping;
+    if (isSleeping) {
+        sleepBtn.textContent = 'Réveiller';
+        sleep = 0; // Réinitialise la jauge de sommeil pour qu'elle se remplisse pendant que le familier dort
+    } else {
+        sleepBtn.textContent = 'Activer Dodo';
+        sleep = 0; // Réinitialise la jauge de sommeil au réveil
+    }
+    updateBars(); 
+    saveData();
+  }
+  
+  function evolve() { 
+    alert('Votre familier a évolué !'); 
+    saveData();
+  }
+
+  function openChest() {
+    const today = new Date().toDateString();
+    if (lastChestDate === today) {
+      alert('Vous avez déjà ouvert votre coffre aujourd\'hui.');
+      return;
+    }
+    const item = ITEMS[Math.floor(Math.random()*ITEMS.length)];
+    chestResult.textContent = 'Vous avez reçu: ' + item;
+    lastChestDate = today;
+    saveData();
+  }
+
+  petImageInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if(file){
+      const reader = new FileReader();
+      reader.onload = () => {
+        petImage.src = reader.result;
+        saveData();
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+  
+  petNameInput.addEventListener('input', saveData);
+
+  loadData();
+
+  setInterval(() => {
+    const timePassed = 1000;
+    
+    if (!isSleeping) { // Les jauges ne se vident pas si le mode Dodo est activé
+        hunger = Math.max(hunger - HUNGER_DECAY_PER_SECOND, 0);
+        xp += (XP_PASSIVE_PER_MIN / 60);
+        if(xp > levelXP[99]) xp = levelXP[99];
+        const totalSecondsIn15Days = 15 * 24 * 60 * 60;
+        happiness = Math.min(happiness + (100 / totalSecondsIn15Days), HAPPINESS_DAYS_TO_MAX);
+    }
+    
+    // La jauge de sommeil se remplit toujours
+    sleep = isSleeping ? Math.min(sleep + (100 / (8 * 60 * 60)), 100) : 0;
+    
+    const today = new Date().toDateString();
+    if (lastFightDate !== today) {
+        fightsToday = 0;
+        lastFightDate = today;
+    }
+
+    updateBars();
+  }, 1000);
+
+  updateBars();
+})();
+</script>
+</body>
+</html>
